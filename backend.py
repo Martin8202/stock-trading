@@ -538,7 +538,7 @@ def get_recent_pnl(days=3):
                 "出場日期": p.get('sell_date', ''),
                 "代號": ticker,
                 "名稱": stock_name,
-                "類型": p.get('strategy_type', ''),
+                "類型": "基礎單" if p.get('strategy_type', '') == "Basic" else "加碼單",
                 "股數": format_number(safe_int(p.get('shares', 0))),
                 "買入成本": format_number(total_cost),
                 "賣出金額": format_number(sell_amount) if sell_amount > 0 else "-",

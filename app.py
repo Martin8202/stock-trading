@@ -211,6 +211,12 @@ with st.spinner("載入庫存資料中..."):
             
             # 使用 form 包裹
             with st.form("integrated_form"):
+                # 賣出日期選擇
+                sell_date = st.date_input(
+                    "賣出日期",
+                    value=datetime.now(),
+                    help="選擇賣出日期"
+                )
                 edited_df = st.data_editor(
                     integrated_df[['賣出金額', '狀態', '損益(%)', '股票', '類型', 
                                    '出場價', '現價', '進場日期', '購買天數', '總成本', '庫存股數', '備註']],
@@ -272,7 +278,8 @@ with st.spinner("載入庫存資料中..."):
                                 
                                 ids = position_id.split('|')
                                 sell_amt = sell_amount if sell_amount > 0 else None
-                                if mark_positions_sold(ids, sell_amount=sell_amt):
+                                sell_date_str = sell_date.strftime('%Y-%m-%d')
+                                if mark_positions_sold(ids, sell_amount=sell_amt, sell_date=sell_date_str):
                                     success_count += 1
                         
                         if success_count > 0:
@@ -313,15 +320,35 @@ with st.spinner("載入近期損益中..."):
         else:
             # 顯示總計
             total_records = len(recent_pnl_df)
-            st.caption(f"共 {total_records} 筆出場記錄")
+            
+            # 計算總損益
+            total_pnl = 0
+            for idx, row in recent_pnl_df.iterrows():
+                # 解析損益金額（移除千分位和貨幣符號）
+                pnl_str = str(row.get('損益', '0'))
+                pnl_str = pnl_str.replace(',', '').replace('$', '').replace('NT', '').strip()
+                try:
+                    total_pnl += float(pnl_str)
+                except:
+                    pass
+            
+            # 顯示統計資訊
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("出場筆數", total_records)
+            with col2:
+                pnl_color = "normal" if total_pnl >= 0 else "inverse"
+                st.metric(
+                    "總損益", 
+                    f"NT$ {total_pnl:,.0f}",
+                    delta=f"{total_pnl:+,.0f}",
+                    delta_color=pnl_color
+                )
+            
+            st.markdown("---")
             
             # 顯示表格
             st.dataframe(recent_pnl_df, use_container_width=True, hide_index=True)
-            
-            # 計算總損益（如果有賣出金額的話）
-            if '賣出金額' in recent_pnl_df.columns:
-                # 這裡需要解析格式化的數字，暫時跳過統計
-                pass
     
     except Exception as e:
         st.error(f"❌ 載入近期損益失敗: {e}")
