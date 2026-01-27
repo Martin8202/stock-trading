@@ -189,12 +189,14 @@ def update_prices_to_sheets():
     sh = client.open_by_url(SHEET_URL)
     
     # 取得或建立「股價歷史」工作表
+    # 欄位：日期, 股票代號, 股票名稱, 開盤價, 最高價, 最低價, 收盤價, 成交量, MA5, MA10, MA20, MA60, 兩日低, 更新時間
     try:
         price_ws = sh.worksheet("股價歷史")
     except gspread.WorksheetNotFound:
-        price_ws = sh.add_worksheet(title="股價歷史", rows=1000, cols=10)
+        price_ws = sh.add_worksheet(title="股價歷史", rows=5000, cols=15)
         # 寫入標題
-        price_ws.update('A1:G1', [['股票代號', '日期', '開盤價', '最高價', '最低價', '收盤價', '成交量']])
+        headers = ['日期', '股票代號', '股票名稱', '開盤價', '最高價', '最低價', '收盤價', '成交量', 'MA5', 'MA10', 'MA20', 'MA60', '兩日低', '更新時間']
+        price_ws.update('A1:N1', [headers])
     
     # 讀取現有資料
     existing_data = price_ws.get_all_records()
@@ -203,27 +205,72 @@ def update_prices_to_sheets():
         key = f"{row.get('股票代號', '')}_{row.get('日期', '')}"
         existing_keys.add(key)
     
+    # 取得股票名稱對照表
+    def get_stock_name(ticker):
+        try:
+            if ticker in twstock.codes:
+                return twstock.codes[ticker].name
+            return ticker
+        except:
+            return ticker
+    
     # 抓取並更新每支股票
     all_new_data = []
+    update_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
     for ticker in tickers:
         print(f"正在抓取 {ticker}...")
         
-        data = fetch_stock_data(ticker, days=60)
+        data = fetch_stock_data(ticker, days=70)  # 多抓幾天以計算 MA60
         
-        # 篩選新資料（避免重複）
-        for row in data:
+        if not data:
+            print(f"  ⚠ {ticker} 無法取得資料")
+            continue
+        
+        # 將資料按日期排序
+        data_sorted = sorted(data, key=lambda x: x['日期'])
+        
+        # 計算 MA 和兩日低
+        closes = [row['收盤價'] for row in data_sorted]
+        stock_name = get_stock_name(ticker)
+        
+        for i, row in enumerate(data_sorted):
             key = f"{row['股票代號']}_{row['日期']}"
-            if key not in existing_keys:
-                all_new_data.append([
-                    row['股票代號'],
-                    row['日期'],
-                    row['開盤價'],
-                    row['最高價'],
-                    row['最低價'],
-                    row['收盤價'],
-                    row['成交量']
-                ])
-                existing_keys.add(key)
+            if key in existing_keys:
+                continue  # 跳過已存在的資料
+            
+            # 計算 MA 值
+            ma5 = sum(closes[max(0, i-4):i+1]) / min(5, i+1) if i >= 0 else 0
+            ma10 = sum(closes[max(0, i-9):i+1]) / min(10, i+1) if i >= 0 else 0
+            ma20 = sum(closes[max(0, i-19):i+1]) / min(20, i+1) if i >= 0 else 0
+            ma60 = sum(closes[max(0, i-59):i+1]) / min(60, i+1) if i >= 0 else 0
+            
+            # 計算兩日低（前兩天的收盤價最低點）
+            if i >= 2:
+                two_day_low = min(closes[i-2], closes[i-1])
+            elif i == 1:
+                two_day_low = closes[i-1]
+            else:
+                two_day_low = closes[i]
+            
+            # 按照原本的欄位順序：日期, 股票代號, 股票名稱, 開盤價, 最高價, 最低價, 收盤價, 成交量, MA5, MA10, MA20, MA60, 兩日低, 更新時間
+            all_new_data.append([
+                row['日期'],
+                row['股票代號'],
+                stock_name,
+                row['開盤價'],
+                row['最高價'],
+                row['最低價'],
+                row['收盤價'],
+                row['成交量'],
+                round(ma5, 2),
+                round(ma10, 2),
+                round(ma20, 2),
+                round(ma60, 2),
+                round(two_day_low, 2),
+                update_time
+            ])
+            existing_keys.add(key)
         
         # 避免 API 限制
         time.sleep(1)
@@ -239,8 +286,8 @@ def update_prices_to_sheets():
         if end_row > price_ws.row_count:
             price_ws.add_rows(end_row - price_ws.row_count + 100)
         
-        # 寫入資料
-        cell_range = f'A{start_row}:G{end_row}'
+        # 寫入資料（14 個欄位）
+        cell_range = f'A{start_row}:N{end_row}'
         price_ws.update(cell_range, all_new_data)
         
         print(f"成功新增 {len(all_new_data)} 筆股價資料")
