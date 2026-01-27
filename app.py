@@ -181,12 +181,11 @@ with st.spinner("載入庫存資料中..."):
                     pass
             
             with col4:
-                pnl_color = "normal" if total_unrealized_pnl >= 0 else "inverse"
                 st.metric(
                     "未實現損益", 
                     f"NT$ {total_unrealized_pnl:,.0f}",
                     delta=f"{total_unrealized_pnl:+,.0f}",
-                    delta_color=pnl_color
+                    delta_color="normal"  # 正値綠色，負值紅色
                 )
             
             st.markdown("---")
@@ -359,12 +358,11 @@ with st.spinner("載入近期損益中..."):
             with col1:
                 st.metric("出場筆數", total_records)
             with col2:
-                pnl_color = "normal" if total_pnl >= 0 else "inverse"
                 st.metric(
                     "總損益", 
                     f"NT$ {total_pnl:,.0f}",
                     delta=f"{total_pnl:+,.0f}",
-                    delta_color=pnl_color
+                    delta_color="normal"  # 正值綠色，負值紅色
                 )
             
             st.markdown("---")

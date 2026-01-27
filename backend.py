@@ -453,7 +453,7 @@ def analyze_portfolio(portfolio, analysis_date_str=None):
             
             current_close = df_slice['Close'].iloc[-1]
             ma20 = df_slice['Close'].rolling(window=MA_PERIOD).mean().iloc[-1]
-            prev_2_days_low = df_slice['Close'].iloc[-3:-1].min()
+            prev_2_days_low = df_slice['Close'].iloc[-2:].min()  # 今天和昨天的收盤價最低
             
             data_cache[ticker] = {
                 "close": current_close,

@@ -245,13 +245,11 @@ def update_prices_to_sheets():
             ma20 = sum(closes[max(0, i-19):i+1]) / min(20, i+1) if i >= 0 else 0
             ma60 = sum(closes[max(0, i-59):i+1]) / min(60, i+1) if i >= 0 else 0
             
-            # 計算兩日低（前兩天的收盤價最低點）
-            if i >= 2:
-                two_day_low = min(closes[i-2], closes[i-1])
-            elif i == 1:
-                two_day_low = closes[i-1]
+            # 計算兩日低（今天和昨天的收盤價最低點）
+            if i >= 1:
+                two_day_low = min(closes[i], closes[i-1])  # 今天和昨天
             else:
-                two_day_low = closes[i]
+                two_day_low = closes[i]  # 第一天沒有昨天，用今天
             
             # 按照原本的欄位順序：日期, 股票代號, 股票名稱, 開盤價, 最高價, 最低價, 收盤價, 成交量, MA5, MA10, MA20, MA60, 兩日低, 更新時間
             all_new_data.append([
