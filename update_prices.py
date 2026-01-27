@@ -41,6 +41,65 @@ def get_holdings_tickers():
     
     return list(tickers)
 
+def fetch_from_twse(ticker, year, month):
+    """
+    直接從證交所 API 抓取股價資料（繞過 twstock 的解析問題）
+    
+    Args:
+        ticker: 股票代號
+        year: 年份
+        month: 月份
+        
+    Returns:
+        list: 股價資料列表
+    """
+    import requests
+    
+    results = []
+    
+    # 證交所 API URL
+    date_str = f"{year}{month:02d}01"
+    url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={ticker}"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        if data.get('stat') == 'OK' and data.get('data'):
+            for row in data['data']:
+                # row 格式: [日期, 成交股數, 成交金額, 開盤價, 最高價, 最低價, 收盤價, 漲跌價差, 成交筆數]
+                try:
+                    # 解析民國年日期 (例如: "114/01/27")
+                    date_parts = row[0].split('/')
+                    tw_year = int(date_parts[0])
+                    gregorian_year = tw_year + 1911
+                    date_formatted = f"{gregorian_year}-{date_parts[1]}-{date_parts[2]}"
+                    
+                    # 解析價格（移除逗號）
+                    open_price = float(row[3].replace(',', '')) if row[3] != '--' else 0
+                    high_price = float(row[4].replace(',', '')) if row[4] != '--' else 0
+                    low_price = float(row[5].replace(',', '')) if row[5] != '--' else 0
+                    close_price = float(row[6].replace(',', '')) if row[6] != '--' else 0
+                    volume = int(row[1].replace(',', '')) if row[1] != '--' else 0
+                    
+                    results.append({
+                        '股票代號': ticker,
+                        '日期': date_formatted,
+                        '開盤價': open_price,
+                        '最高價': high_price,
+                        '最低價': low_price,
+                        '收盤價': close_price,
+                        '成交量': volume
+                    })
+                except (ValueError, IndexError) as e:
+                    continue
+                    
+    except Exception as e:
+        print(f"TWSE API 抓取 {ticker} 失敗: {e}")
+    
+    return results
+
+
 def fetch_stock_data(ticker, days=60):
     """
     從 API 抓取股價資料
@@ -58,31 +117,36 @@ def fetch_stock_data(ticker, days=60):
     
     results = []
     
-    # 嘗試使用 twstock
+    # 方法 1: 直接呼叫證交所 API（優先）
     try:
-        if clean_ticker in twstock.codes:
-            stock = twstock.Stock(clean_ticker)
-            data = stock.fetch_from(start_date.year, start_date.month)
+        # 抓取需要的月份
+        current = start_date
+        while current <= end_date:
+            month_data = fetch_from_twse(clean_ticker, current.year, current.month)
             
-            if data:
-                for d in data:
-                    if d.date >= start_date.date():
-                        results.append({
-                            '股票代號': clean_ticker,
-                            '日期': d.date.strftime('%Y-%m-%d'),
-                            '開盤價': d.open,
-                            '最高價': d.high,
-                            '最低價': d.low,
-                            '收盤價': d.close,
-                            '成交量': d.capacity
-                        })
-                
-                if results:
-                    return results
+            # 篩選日期範圍內的資料
+            for row in month_data:
+                row_date = datetime.strptime(row['日期'], '%Y-%m-%d').date()
+                if start_date.date() <= row_date <= end_date.date():
+                    results.append(row)
+            
+            # 下一個月
+            if current.month == 12:
+                current = current.replace(year=current.year + 1, month=1)
+            else:
+                current = current.replace(month=current.month + 1)
+            
+            # 避免 API 限制
+            time.sleep(0.5)
+        
+        if results:
+            print(f"  ✓ TWSE API 成功抓取 {clean_ticker}: {len(results)} 筆")
+            return results
+            
     except Exception as e:
-        print(f"twstock 抓取 {clean_ticker} 失敗: {e}")
+        print(f"TWSE API 抓取 {clean_ticker} 失敗: {e}")
     
-    # 如果 twstock 失敗，嘗試 yfinance
+    # 方法 2: 如果證交所 API 失敗，嘗試 yfinance（備援）
     try:
         market = twstock.codes[clean_ticker].market if clean_ticker in twstock.codes else "上市"
         suffix = ".TW" if market == "上市" else ".TWO"
@@ -102,6 +166,7 @@ def fetch_stock_data(ticker, days=60):
                     '收盤價': row.get('Close', 0),
                     '成交量': row.get('Volume', 0)
                 })
+            print(f"  ✓ yfinance 成功抓取 {clean_ticker}: {len(results)} 筆")
     except Exception as e:
         print(f"yfinance 抓取 {clean_ticker} 失敗: {e}")
     
@@ -123,11 +188,11 @@ def update_prices_to_sheets():
     client = init_connection()
     sh = client.open_by_url(SHEET_URL)
     
-    # 取得或建立「股價數據」工作表
+    # 取得或建立「股價歷史」工作表
     try:
-        price_ws = sh.worksheet("股價數據")
+        price_ws = sh.worksheet("股價歷史")
     except gspread.WorksheetNotFound:
-        price_ws = sh.add_worksheet(title="股價數據", rows=1000, cols=10)
+        price_ws = sh.add_worksheet(title="股價歷史", rows=1000, cols=10)
         # 寫入標題
         price_ws.update('A1:G1', [['股票代號', '日期', '開盤價', '最高價', '最低價', '收盤價', '成交量']])
     

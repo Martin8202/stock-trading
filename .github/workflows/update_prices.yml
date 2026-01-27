@@ -21,7 +21,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install gspread twstock yfinance pandas lxml
+          pip install gspread twstock yfinance pandas lxml requests
       
       - name: Create service account file
         env:
