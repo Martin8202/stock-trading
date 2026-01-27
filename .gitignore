@@ -43,3 +43,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Archive (local only)
+archive/
