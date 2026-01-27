@@ -227,6 +227,60 @@ def mark_positions_sold(position_ids, sell_amount=None, sell_date=None):
 # ==========================================
 
 @st.cache_data(ttl=300)  # 快取 5 分鐘（300 秒）
+def get_price_data_from_sheets():
+    """
+    從 Google Sheets 讀取所有股價資料（快取版本）
+    
+    Returns:
+        dict: {ticker: DataFrame} 格式的股價資料
+    """
+    try:
+        price_worksheet = get_price_worksheet()
+        if not price_worksheet:
+            return {}
+        
+        # 讀取所有資料
+        all_data = price_worksheet.get_all_records()
+        if not all_data:
+            return {}
+        
+        # 按股票代號分組
+        ticker_data = {}
+        for row in all_data:
+            ticker = str(row.get('股票代號', '')).strip()
+            if not ticker:
+                continue
+            
+            if ticker not in ticker_data:
+                ticker_data[ticker] = []
+            ticker_data[ticker].append(row)
+        
+        # 轉換為 DataFrame
+        result = {}
+        for ticker, rows in ticker_data.items():
+            df = pd.DataFrame(rows)
+            df['Date'] = pd.to_datetime(df['日期'])
+            df.set_index('Date', inplace=True)
+            df = df.rename(columns={
+                '收盤價': 'Close',
+                '開盤價': 'Open',
+                '最高價': 'High',
+                '最低價': 'Low',
+                '成交量': 'Volume'
+            })
+            # 確保數值欄位是數字類型
+            for col in ['Close', 'Open', 'High', 'Low', 'Volume']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            df = df.sort_index()
+            result[ticker] = df
+        
+        return result
+    except Exception as e:
+        return {}
+
+
+@st.cache_data(ttl=300)  # 快取 5 分鐘（300 秒）
 def get_market_data(ticker, target_date):
     """
     取得市場資料（優先從 Google Sheets 讀取，失敗則從 API 抓取）
@@ -245,39 +299,14 @@ def get_market_data(ticker, target_date):
     ticker_str = str(ticker)
     clean_ticker = ticker_str.upper().replace(".TW", "").replace(".TWO", "").strip()
     
-    # 方法 1: 嘗試從 Google Sheets 讀取
-    try:
-        price_worksheet = get_price_worksheet()
-        if price_worksheet:
-            # 讀取所有資料
-            all_data = price_worksheet.get_all_records()
-            
-            # 篩選該股票的資料
-            ticker_data = [row for row in all_data if str(row.get('股票代號', '')).strip() == clean_ticker]
-            
-            if ticker_data:
-                # 轉換為 DataFrame
-                df = pd.DataFrame(ticker_data)
-                df['Date'] = pd.to_datetime(df['日期'])
-                df.set_index('Date', inplace=True)
-                
-                # 重新命名欄位
-                df = df.rename(columns={
-                    '收盤價': 'Close',
-                    '開盤價': 'Open',
-                    '最高價': 'High',
-                    '最低價': 'Low',
-                    '成交量': 'Volume'
-                })
-                
-                # 篩選到目標日期為止的資料
-                df = df[df.index <= pd.to_datetime(target_date)]
-                
-                if not df.empty and len(df) >= 20:
-                    return df[['Close', 'Open', 'High', 'Low', 'Volume']]
-    except Exception as e:
-        # 如果從 Google Sheets 讀取失敗，繼續使用 API
-        pass
+    # 方法 1: 嘗試從快取的 Google Sheets 資料讀取
+    cached_prices = get_price_data_from_sheets()
+    if clean_ticker in cached_prices:
+        df = cached_prices[clean_ticker]
+        # 篩選到目標日期為止的資料
+        df = df[df.index <= pd.to_datetime(target_date)]
+        if not df.empty and len(df) >= 20:
+            return df[['Close', 'Open', 'High', 'Low', 'Volume']] if 'Open' in df.columns else df[['Close']]
     
     # 方法 2: 從 API 抓取（原本的邏輯）
     final_df = None
@@ -447,9 +476,9 @@ def analyze_portfolio(portfolio, analysis_date_str=None):
             stop_loss_price = market_data['min_2day']
             if market_data['close'] < stop_loss_price:
                 signal = "SELL"
-                reason = f"跌破兩日低 ({stop_loss_price:.2f})"
+                reason = f"跌破前兩日低 ({stop_loss_price:.2f})"
             else:
-                reason = f"兩日低 ({stop_loss_price:.2f}) 之上"
+                reason = f"前兩日低 ({stop_loss_price:.2f}) 之上"
         
         results.append({
             "id": "|".join(position['ids']),  # 合併所有 ID

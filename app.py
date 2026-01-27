@@ -159,13 +159,35 @@ with st.spinner("載入庫存資料中..."):
             total_positions = len(holdings_df)
             sell_signals = len(holdings_df[holdings_df['建議'] == 'SELL'])
             
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("總部位數", total_positions)
             with col2:
                 st.metric("建議出場", sell_signals, delta=None if sell_signals == 0 else f"{sell_signals} 筆")
             with col3:
                 st.metric("持續持有", total_positions - sell_signals)
+            
+            # 計算未實現損益總額
+            total_unrealized_pnl = 0
+            for idx, row in holdings_df.iterrows():
+                # 解析損益金額（格式如 "+1,234 (+5.67%)"）
+                pl_str = str(row.get('損益(%)', '0'))
+                # 取出第一個數字部分（損益金額）
+                pl_str = pl_str.split('(')[0].strip()
+                pl_str = pl_str.replace(',', '').replace('+', '').strip()
+                try:
+                    total_unrealized_pnl += float(pl_str)
+                except:
+                    pass
+            
+            with col4:
+                pnl_color = "normal" if total_unrealized_pnl >= 0 else "inverse"
+                st.metric(
+                    "未實現損益", 
+                    f"NT$ {total_unrealized_pnl:,.0f}",
+                    delta=f"{total_unrealized_pnl:+,.0f}",
+                    delta_color=pnl_color
+                )
             
             st.markdown("---")
             
@@ -174,7 +196,7 @@ with st.spinner("載入庫存資料中..."):
             **📋 策略說明**
             - 🟢 **HOLD** = 持續持有 | 🔴 **SELL** = 建議出場
             - **基礎單 (Basic)**：跌破月線 (MA20) 出場
-            - **加碼單 (Add)**：跌破兩日低點出場
+            - **加碼單 (Add)**：跌破前兩日收盤低點出場
             """)
             
             # 準備整合表格資料

@@ -1,0 +1,38 @@
+name: Update Stock Prices
+
+on:
+  schedule:
+    # 每天台北時間 17:00 執行（UTC 09:00）- 確保收盤資料已更新
+    - cron: '0 9 * * 1-5'  # 週一到週五
+  workflow_dispatch:  # 允許手動觸發
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install gspread twstock yfinance pandas
+      
+      - name: Create service account file
+        env:
+          GCP_SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          echo "$GCP_SERVICE_ACCOUNT" > service_account.json
+      
+      - name: Run update script
+        run: |
+          python update_prices.py
+      
+      - name: Clean up
+        run: |
+          rm -f service_account.json
