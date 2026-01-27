@@ -237,12 +237,16 @@ def get_price_data_from_sheets():
     try:
         price_worksheet = get_price_worksheet()
         if not price_worksheet:
+            print("[DEBUG] 股價歷史工作表不存在")
             return {}
         
         # 讀取所有資料
         all_data = price_worksheet.get_all_records()
         if not all_data:
+            print("[DEBUG] 股價歷史工作表沒有資料")
             return {}
+        
+        print(f"[DEBUG] 從 Google Sheets 讀取到 {len(all_data)} 筆股價資料")
         
         # 按股票代號分組
         ticker_data = {}
@@ -275,8 +279,10 @@ def get_price_data_from_sheets():
             df = df.sort_index()
             result[ticker] = df
         
+        print(f"[DEBUG] 處理完成，共 {len(result)} 支股票的價格資料")
         return result
     except Exception as e:
+        print(f"[DEBUG] 讀取股價歷史失敗: {e}")
         return {}
 
 
@@ -306,7 +312,12 @@ def get_market_data(ticker, target_date):
         # 篩選到目標日期為止的資料
         df = df[df.index <= pd.to_datetime(target_date)]
         if not df.empty and len(df) >= 20:
+            print(f"[✅ Sheets] {clean_ticker} 從 Google Sheets 讀取，{len(df)} 筆資料")
             return df[['Close', 'Open', 'High', 'Low', 'Volume']] if 'Open' in df.columns else df[['Close']]
+        else:
+            print(f"[⚠️ Sheets] {clean_ticker} 在 Sheets 中資料不足 ({len(df)} 筆)，改用 API")
+    else:
+        print(f"[❌ Sheets] {clean_ticker} 不在 Sheets 中，改用 API")
     
     # 方法 2: 從 API 抓取（原本的邏輯）
     final_df = None
