@@ -500,7 +500,8 @@ def analyze_portfolio(portfolio, analysis_date_str=None):
             "購買天數": len(position['entry_dates_set']),
             "庫存股數": format_number(total_shares),
             "總成本": format_number(total_cost),
-            "現價": format_number(market_value),
+            "現價": f"{market_data['close']:.2f}",  # 顯示收盤價（單價）
+            "市價": format_number(market_value),  # 顯示市值
             "損益(%)": pl_display,
             "出場價": f"{stop_loss_price:.2f}",
             "建議": signal,

@@ -217,7 +217,8 @@ with st.spinner("載入庫存資料中..."):
                     '股票': stock_display,
                     '類型': strategy_cn,
                     '出場價': row['出場價'],
-                    '現價': row['現價'],
+                    '現價': row['現價'],  # 顯示收盤價（單價）
+                    '市價': row['市價'],  # 顯示市值
                     '進場日期': row['進場日期'],
                     '購買天數': row['購買天數'],
                     '總成本': row['總成本'],
@@ -240,7 +241,7 @@ with st.spinner("載入庫存資料中..."):
                 )
                 edited_df = st.data_editor(
                     integrated_df[['賣出金額', '狀態', '損益(%)', '股票', '類型', 
-                                   '出場價', '現價', '進場日期', '購買天數', '總成本', '庫存股數', '備註']],
+                                   '出場價', '現價', '市價', '進場日期', '購買天數', '總成本', '庫存股數', '備註']],
                     column_config={
                         '賣出金額': st.column_config.NumberColumn(
                             '賣出金額',
@@ -259,7 +260,8 @@ with st.spinner("載入庫存資料中..."):
                         '股票': st.column_config.TextColumn('股票', disabled=True, width='medium'),
                         '類型': st.column_config.TextColumn('類型', disabled=True, width='small'),
                         '出場價': st.column_config.TextColumn('出場價', disabled=True, width='small'),
-                        '現價': st.column_config.TextColumn('現價', disabled=True, width='small'),
+                        '現價': st.column_config.TextColumn('現價', disabled=True, width='small'),  # 收盤價
+                        '市價': st.column_config.TextColumn('市價', disabled=True, width='small'),  # 市值
                         '進場日期': st.column_config.TextColumn('進場日期', disabled=True, width='small'),
                         '購買天數': st.column_config.TextColumn('購買天數', disabled=True, width='small'),
                         '總成本': st.column_config.TextColumn('總成本', disabled=True, width='small'),
