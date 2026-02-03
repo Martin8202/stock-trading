@@ -41,7 +41,7 @@ def get_holdings_tickers():
     
     return list(tickers)
 
-def fetch_from_twse(ticker, year, month):
+def fetch_from_twse(ticker, year, month, max_retries=3):
     """
     直接從證交所 API 抓取股價資料（繞過 twstock 的解析問題）
     
@@ -49,6 +49,7 @@ def fetch_from_twse(ticker, year, month):
         ticker: 股票代號
         year: 年份
         month: 月份
+        max_retries: 最大重試次數
         
     Returns:
         list: 股價資料列表
@@ -61,41 +62,67 @@ def fetch_from_twse(ticker, year, month):
     date_str = f"{year}{month:02d}01"
     url = f"https://www.twse.com.tw/exchangeReport/STOCK_DAY?response=json&date={date_str}&stockNo={ticker}"
     
-    try:
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        
-        if data.get('stat') == 'OK' and data.get('data'):
-            for row in data['data']:
-                # row 格式: [日期, 成交股數, 成交金額, 開盤價, 最高價, 最低價, 收盤價, 漲跌價差, 成交筆數]
-                try:
-                    # 解析民國年日期 (例如: "114/01/27")
-                    date_parts = row[0].split('/')
-                    tw_year = int(date_parts[0])
-                    gregorian_year = tw_year + 1911
-                    date_formatted = f"{gregorian_year}-{date_parts[1]}-{date_parts[2]}"
+    # 添加瀏覽器 User-Agent 以避免被封鎖
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    # 重試邏輯
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers, timeout=15)
+            
+            # 檢查 HTTP 狀態碼
+            if response.status_code != 200:
+                print(f"  API 返回 HTTP {response.status_code}，重試中... ({attempt + 1}/{max_retries})")
+                time.sleep(2 ** attempt)  # 指數退避
+                continue
+            
+            data = response.json()
+            
+            if data.get('stat') == 'OK' and data.get('data'):
+                for row in data['data']:
+                    # row 格式: [日期, 成交股數, 成交金額, 開盤價, 最高價, 最低價, 收盤價, 漲跌價差, 成交筆數]
+                    try:
+                        # 解析民國年日期 (例如: "114/01/27")
+                        date_parts = row[0].split('/')
+                        tw_year = int(date_parts[0])
+                        gregorian_year = tw_year + 1911
+                        date_formatted = f"{gregorian_year}-{date_parts[1]}-{date_parts[2]}"
+                        
+                        # 解析價格（移除逗號）
+                        open_price = float(row[3].replace(',', '')) if row[3] != '--' else 0
+                        high_price = float(row[4].replace(',', '')) if row[4] != '--' else 0
+                        low_price = float(row[5].replace(',', '')) if row[5] != '--' else 0
+                        close_price = float(row[6].replace(',', '')) if row[6] != '--' else 0
+                        volume = int(row[1].replace(',', '')) if row[1] != '--' else 0
+                        
+                        results.append({
+                            '股票代號': ticker,
+                            '日期': date_formatted,
+                            '開盤價': open_price,
+                            '最高價': high_price,
+                            '最低價': low_price,
+                            '收盤價': close_price,
+                            '成交量': volume
+                        })
+                    except (ValueError, IndexError) as e:
+                        continue
+                
+                # 成功抓取，跳出重試迴圈
+                break
+            else:
+                # API 回應不是 OK，可能是查無資料或其他錯誤
+                if attempt < max_retries - 1:
+                    print(f"  API 回應異常 (stat={data.get('stat')})，重試中... ({attempt + 1}/{max_retries})")
+                    time.sleep(2 ** attempt)
                     
-                    # 解析價格（移除逗號）
-                    open_price = float(row[3].replace(',', '')) if row[3] != '--' else 0
-                    high_price = float(row[4].replace(',', '')) if row[4] != '--' else 0
-                    low_price = float(row[5].replace(',', '')) if row[5] != '--' else 0
-                    close_price = float(row[6].replace(',', '')) if row[6] != '--' else 0
-                    volume = int(row[1].replace(',', '')) if row[1] != '--' else 0
-                    
-                    results.append({
-                        '股票代號': ticker,
-                        '日期': date_formatted,
-                        '開盤價': open_price,
-                        '最高價': high_price,
-                        '最低價': low_price,
-                        '收盤價': close_price,
-                        '成交量': volume
-                    })
-                except (ValueError, IndexError) as e:
-                    continue
-                    
-    except Exception as e:
-        print(f"TWSE API 抓取 {ticker} 失敗: {e}")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"  TWSE API 抓取 {ticker} 失敗 (嘗試 {attempt + 1}/{max_retries}): {e}")
+                time.sleep(2 ** attempt)  # 指數退避：1s, 2s, 4s
+            else:
+                print(f"  TWSE API 抓取 {ticker} 最終失敗: {e}")
     
     return results
 
@@ -136,8 +163,8 @@ def fetch_stock_data(ticker, days=60):
             else:
                 current = current.replace(month=current.month + 1)
             
-            # 避免 API 限制
-            time.sleep(0.5)
+            # 避免 API 限制（增加延遲以防被封鎖）
+            time.sleep(3)
         
         if results:
             print(f"  ✓ TWSE API 成功抓取 {clean_ticker}: {len(results)} 筆")
@@ -270,8 +297,8 @@ def update_prices_to_sheets():
             ])
             existing_keys.add(key)
         
-        # 避免 API 限制
-        time.sleep(1)
+        # 避免 API 限制（增加延遲以防被封鎖）
+        time.sleep(3)
     
     # 批次寫入新資料
     if all_new_data:
