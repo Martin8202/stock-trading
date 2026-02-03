@@ -151,9 +151,13 @@ def fetch_stock_data(ticker, days=60):
     # 方法 1: 直接呼叫證交所 API（優先）
     try:
         # 抓取需要的月份
-        current = start_date
-        while current <= end_date:
-            month_data = fetch_from_twse(clean_ticker, current.year, current.month)
+        current_year = start_date.year
+        current_month = start_date.month
+        end_year = end_date.year
+        end_month = end_date.month
+        
+        while (current_year, current_month) <= (end_year, end_month):
+            month_data = fetch_from_twse(clean_ticker, current_year, current_month)
             
             # 篩選日期範圍內的資料
             for row in month_data:
@@ -162,10 +166,11 @@ def fetch_stock_data(ticker, days=60):
                     results.append(row)
             
             # 下一個月
-            if current.month == 12:
-                current = current.replace(year=current.year + 1, month=1)
+            if current_month == 12:
+                current_year += 1
+                current_month = 1
             else:
-                current = current.replace(month=current.month + 1)
+                current_month += 1
             
             # 避免 API 限制（增加延遲以防被封鎖）
             time.sleep(3)
@@ -236,6 +241,9 @@ def update_prices_to_sheets():
         key = f"{row.get('股票代號', '')}_{row.get('日期', '')}"
         existing_keys.add(key)
     
+    print(f"[DEBUG] Google Sheets 中現有資料筆數: {len(existing_data)}")
+    print(f"[DEBUG] 唯一的 (股票代號_日期) 組合數: {len(existing_keys)}")
+    
     # 取得股票名稱對照表
     def get_stock_name(ticker):
         try:
@@ -258,6 +266,10 @@ def update_prices_to_sheets():
             print(f"  ⚠ {ticker} 無法取得資料")
             continue
         
+        print(f"  [DEBUG] {ticker} 抓取到 {len(data)} 筆資料")
+        if data:
+            print(f"  [DEBUG] 日期範圍: {data[0]['日期']} ~ {data[-1]['日期']}")
+        
         # 將資料按日期排序
         data_sorted = sorted(data, key=lambda x: x['日期'])
         
@@ -265,10 +277,13 @@ def update_prices_to_sheets():
         closes = [row['收盤價'] for row in data_sorted]
         stock_name = get_stock_name(ticker)
         
+        new_count_for_ticker = 0
         for i, row in enumerate(data_sorted):
             key = f"{row['股票代號']}_{row['日期']}"
             if key in existing_keys:
                 continue  # 跳過已存在的資料
+            
+            new_count_for_ticker += 1
             
             # 計算 MA 值
             ma5 = sum(closes[max(0, i-4):i+1]) / min(5, i+1) if i >= 0 else 0
@@ -300,6 +315,8 @@ def update_prices_to_sheets():
                 update_time
             ])
             existing_keys.add(key)
+        
+        print(f"  [DEBUG] {ticker} 有 {new_count_for_ticker} 筆新資料將被寫入")
         
         # 避免 API 限制（增加延遲以防被封鎖）
         time.sleep(3)
