@@ -19,6 +19,9 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # Google Sheets 設定
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1WuuhxCwgORIJoJ-TLa6isHNjJ7BCuSYKXrW-9JE_Jcc/edit'
 
+# 資料保留設定
+DATA_RETENTION_DAYS = 180  # 保留最近 180 天（半年）的資料
+
 def init_connection():
     """初始化 Google Sheets 連線"""
     json_path = os.path.join(os.path.dirname(__file__), 'service_account.json')
@@ -208,6 +211,51 @@ def fetch_stock_data(ticker, days=60):
     
     return results
 
+def cleanup_old_data(price_ws, days=DATA_RETENTION_DAYS):
+    """
+    清理超過指定天數的舊資料
+    
+    Args:
+        price_ws: 股價歷史工作表
+        days: 保留最近幾天的資料（預設 180 天）
+    """
+    try:
+        cutoff_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        print(f"正在清理 {cutoff_date} 之前的舊資料...")
+        
+        # 讀取所有資料
+        all_data = price_ws.get_all_records()
+        
+        if not all_data:
+            print("沒有資料需要清理")
+            return
+        
+        # 找出需要刪除的行號
+        rows_to_delete = []
+        for idx, row in enumerate(all_data, start=2):  # 從第 2 行開始（第 1 行是標題）
+            date_str = str(row.get('日期', ''))
+            if date_str and date_str < cutoff_date:
+                rows_to_delete.append(idx)
+        
+        if not rows_to_delete:
+            print("沒有舊資料需要清理")
+            return
+        
+        # 從後往前刪除（避免索引變化問題）
+        deleted_count = 0
+        for row_idx in reversed(rows_to_delete):
+            price_ws.delete_rows(row_idx)
+            deleted_count += 1
+            # 避免 API 限制
+            if deleted_count % 10 == 0:
+                time.sleep(1)
+        
+        print(f"✓ 已清理 {deleted_count} 筆舊資料（{cutoff_date} 之前）")
+        
+    except Exception as e:
+        print(f"清理舊資料時發生錯誤: {e}")
+        print("將繼續執行資料更新...")
+
 def update_prices_to_sheets():
     """主函數：更新所有庫存股票的股價到 Google Sheets"""
     print(f"開始更新股價資料... {datetime.now()}")
@@ -243,6 +291,9 @@ def update_prices_to_sheets():
     
     print(f"[DEBUG] Google Sheets 中現有資料筆數: {len(existing_data)}")
     print(f"[DEBUG] 唯一的 (股票代號_日期) 組合數: {len(existing_keys)}")
+    
+    # 清理舊資料（保留最近 180 天）
+    cleanup_old_data(price_ws)
     
     # 取得股票名稱對照表
     def get_stock_name(ticker):
