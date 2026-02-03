@@ -11,6 +11,10 @@ from datetime import datetime, timedelta
 import twstock
 import yfinance as yf
 import time
+import urllib3
+
+# 禁用 SSL 警告（因為證交所證書在某些環境有問題）
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Google Sheets 設定
 SHEET_URL = 'https://docs.google.com/spreadsheets/d/1WuuhxCwgORIJoJ-TLa6isHNjJ7BCuSYKXrW-9JE_Jcc/edit'
@@ -70,7 +74,7 @@ def fetch_from_twse(ticker, year, month, max_retries=3):
     # 重試邏輯
     for attempt in range(max_retries):
         try:
-            response = requests.get(url, headers=headers, timeout=15)
+            response = requests.get(url, headers=headers, timeout=15, verify=False)
             
             # 檢查 HTTP 狀態碼
             if response.status_code != 200:
